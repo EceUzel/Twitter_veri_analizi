@@ -1,0 +1,70 @@
+import pandas as pd
+import re
+from transformers import pipeline
+import matplotlib.pyplot as plt
+
+# 1. Duygu analizi modeli yükleme (Hugging Face)
+classifier = pipeline("sentiment-analysis", model="dbmdz/bert-base-turkish-cased")
+
+# 2. Tweet metinlerini temizleme fonksiyonu
+def clean_text(text):
+    text = re.sub(r"http\S+", "", text)  # Linkleri kaldır
+    text = re.sub(r"[^a-zA-Z0-9çğıöşüÇĞİÖŞÜ\s]", "", text)  # Özel karakterleri kaldır
+    text = re.sub(r"\s+", " ", text).strip()  # Fazla boşlukları temizle
+    return text
+
+# 3. Duygu analizi fonksiyonu
+def analyze_sentiment(text):
+    try:
+        result = classifier(text)[0]
+        if result['label'] == "LABEL_1":  # Pozitif sınıf
+            return "Olumlu"
+        elif result['label'] == "LABEL_2":  # Negatif sınıf
+            return "Olumsuz"
+        else:
+            return "Nötr"
+    except Exception as e:
+        return "Hata"
+
+# 4. Veriyi yükleme
+file_path = "KofteciYusuf_UpdatedTweets.xlsx"
+df = pd.read_excel(file_path)
+
+# 5. Tweet metinlerini temizleme
+df["Cleaned_Tweet"] = df["Tweet İçeriği"].apply(clean_text)
+
+# 6. Duygu analizi yapma
+df["Sentiment"] = df["Cleaned_Tweet"].apply(analyze_sentiment)
+
+# 7. Resmi makam tweetlerini tespit etme
+df["Tarih"] = pd.to_datetime(df["Tarih"])  # Tarih sütununu datetime formatına çevir
+resmi_makam_tweetleri = df[df["Kullanıcı Adı"] == "makam"]
+
+# Resmi makam tweetlerinin tarihlerini al
+resmi_makam_tarihleri = resmi_makam_tweetleri["Tarih"].sort_values().tolist()
+
+# 8. Resmi makam tweetlerinden önce ve sonra gelen tweetleri ayırma
+df["Resmi_Makamdan_Sonra"] = df["Tarih"].apply(lambda x: any(x > tarih for tarih in resmi_makam_tarihleri))
+
+# 9. Zaman serisi analizi
+# Her bir zaman diliminde olumlu ve olumsuz tweetlerin sayısını hesapla
+time_series = df.groupby(["Tarih", "Sentiment"]).size().unstack(fill_value=0)
+
+# 10. Veriyi görselleştirme
+plt.figure(figsize=(12, 6))
+time_series.plot(ax=plt.gca(), marker="o")
+plt.title("Zaman İçinde Tweet Duyguları")
+plt.xlabel("Tarih")
+plt.ylabel("Tweet Sayısı")
+plt.legend(["Olumlu", "Olumsuz", "Nötr"])
+plt.grid()
+plt.show()
+
+# 11. Resmi makam tweetlerinden önce ve sonra duygu dağılımı
+before_official = df[~df["Resmi_Makamdan_Sonra"]]["Sentiment"].value_counts()
+after_official = df[df["Resmi_Makamdan_Sonra"]]["Sentiment"].value_counts()
+
+print("Resmi makam tweetlerinden önce duygu dağılımı:")
+print(before_official)
+print("\nResmi makam tweetlerinden sonra duygu dağılımı:")
+print(after_official) 
